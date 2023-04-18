@@ -1,88 +1,81 @@
-import os
 import socket
 import time
+import sys
+import os
+import json
 
-# Function to get the IP address of a domain using a DNS lookup
+# Function to get the IP address for a domain
 def get_ip(domain):
     return socket.gethostbyname(domain)
 
-# Function to update the IP address at a specific line number in the specified file
-def update_ip_in_file(ip, file_path, line_number, domain):
-    # Open the file in read mode and read its content into a list of lines
+# Function to update the IP address in the specified file and line number
+def update_ip_in_file(ip, file_path, line_number):
     with open(file_path, 'r') as file:
         lines = file.readlines()
 
-    # Format the new IP address line
-    ip_line = f"    - \"{ip}\" # {domain}\n"
-    # Replace the specified line with the new IP address line
+    ip_line = f"    - \"{ip}\"\n"
     lines[line_number - 1] = ip_line
 
-    # Open the file in write mode and write the updated content
     with open(file_path, 'w') as file:
         file.writelines(lines)
 
-# Function to reload the CrowdSec configuration
-def reload_crowdsec():
-    os.system('systemctl reload crowdsec')
+# Function to get user input and store them in a JSON configuration file
+def setup(config_file):
+    num_domains = int(input("Enter the number of domains: "))
+    domains = [input(f"Enter domain {i + 1}: ") for i in range(num_domains)]
+    line_numbers = [int(input(f"Enter the line number for domain {i + 1} IP: ")) for i in range(num_domains)]
+    config_file_path = input("Enter the path to the config file: ")
+    check_interval = int(input("Enter the check interval in seconds: "))
+
+    config = {
+        'domains': domains,
+        'line_numbers': line_numbers,
+        'config_file': config_file_path,
+        'check_interval': check_interval
+    }
+
+    with open(config_file, 'w') as f:
+        json.dump(config, f, indent=2)
+
+# Function to load the settings from a JSON configuration file
+def load_config(config_file):
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+
+    return config['domains'], config['line_numbers'], config['config_file'], config['check_interval']
 
 # Main function
 def main():
-    # Domain names to look up
-    domain1 = <DOMAIN1>
-    domain2 = <DOMAIN2>
-    # Path to the configuration file
-    config_file = <CONFIG_FILE>
-    # Line numbers to insert the IP addresses
-    line_number1 = <LINE1>
-    line_number2 = <LINE2>
-    # Time interval (in seconds) to check for IP changes
-    check_interval = 3600
+    config_file = 'update_whitelist_ips_config.json'
 
-    # Get the current IP addresses for both domains
-    current_ip1 = get_ip(domain1)
-    current_ip2 = get_ip(domain2)
+    # Check if the script is run with the 'setup' argument
+    if len(sys.argv) > 1 and sys.argv[1] == "setup":
+        setup(config_file)
+        return
 
-    # Update the configuration file with the current IP addresses
-    update_ip_in_file(current_ip1, config_file, line_number1, domain1)
-    update_ip_in_file(current_ip2, config_file, line_number2, domain2)
-    # Reload the CrowdSec configuration
-    reload_crowdsec()
+    # Load the settings from the configuration file
+    domains, line_numbers, config_file_path, check_interval = load_config(config_file)
 
-    # Continuously check for IP changes
+    previous_ips = [None] * len(domains)
+
+    # Continuously check for IP changes and update the file
     while True:
-        # Get the current IP addresses for both domains
-        new_ip1 = get_ip(domain1)
-        new_ip2 = get_ip(domain2)
+        for i, domain in enumerate(domains):
+            current_ip = get_ip(domain)
 
-        ip_changed = False
+            # If the IP has changed, update the file and reload crowdsec
+            if current_ip != previous_ips[i]:
+                print(f"Updating IP for {domain}...")
+                update_ip_in_file(current_ip, config_file_path, line_numbers[i])
+                previous_ips[i] = current_ip
+                if os.system("systemctl reload crowdsec") == 0:
+                    print(f"Successfully updated IP for {domain} and reloaded crowdsec.")
+                else:
+                    print(f"Error reloading crowdsec after updating IP for {domain}.")
+            else:
+                print(f"IP for {domain} hasn't changed.")
 
-        # Check if the IP address for domain1 has changed
-        if new_ip1 != current_ip1:
-            print(f"IP for {domain1} changed from {current_ip1} to {new_ip1}")
-            current_ip1 = new_ip1
-            # Update the configuration file with the new IP address
-            update_ip_in_file(current_ip1, config_file, line_number1)
-            ip_changed = True
-        else:
-            print(f"IP for {domain1} remains the same: {current_ip1}")
-
-        # Check if the IP address for domain2 has changed
-        if new_ip2 != current_ip2:
-            print(f"IP for {domain2} changed from {current_ip2} to {new_ip2}")
-            current_ip2 = new_ip2
-            # Update the configuration file with the new IP address
-            update_ip_in_file(current_ip2, config_file, line_number2)
-            ip_changed = True
-        else:
-            print(f"IP for {domain2} remains the same: {current_ip2}")
-
-        # If one or both IP addresses have been modified, reload the CrowdSec configuration
-        if ip_changed:
-            reload_crowdsec()
-
-        # Wait for the specified time interval before checking again
         time.sleep(check_interval)
 
-# Entry point of the script
 if __name__ == "__main__":
     main()
