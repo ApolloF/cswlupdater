@@ -9,22 +9,27 @@ def get_ip(domain):
     return socket.gethostbyname(domain)
 
 # Function to update the IP address in the specified file and line number
-def update_ip_in_file(ip, file_path, line_number):
+def update_ip_in_file(ip, file_path, line_number, domain):
     with open(file_path, 'r') as file:
         lines = file.readlines()
 
-    ip_line = f"    - \"{ip}\"\n"
-    lines[line_number - 1] = ip_line
+    try:
+        ip_line = f"    - \"{ip}\" # Origin ip of {domain}, synced by script(if running)\n"
+        lines[line_number - 1] = ip_line
+    except IndexError:
+        print(f"Error: Line number {line_number} is out of range for domain. Please make sure the line number is correct.")
+        return
 
     with open(file_path, 'w') as file:
         file.writelines(lines)
+
 
 # Function to get user input and store them in a JSON configuration file
 def setup(config_file):
     num_domains = int(input("Enter the number of domains: "))
     domains = [input(f"Enter domain {i + 1}: ") for i in range(num_domains)]
     line_numbers = [int(input(f"Enter the line number for domain {i + 1} IP: ")) for i in range(num_domains)]
-    config_file_path = input("Enter the path to the config file: ")
+    config_file_path = input("Enter the path to the whitelist config file: ")
     check_interval = int(input("Enter the check interval in seconds: "))
 
     config = {
@@ -66,7 +71,7 @@ def main():
             # If the IP has changed, update the file and reload crowdsec
             if current_ip != previous_ips[i]:
                 print(f"Updating IP for {domain}...")
-                update_ip_in_file(current_ip, config_file_path, line_numbers[i])
+                update_ip_in_file(current_ip, config_file_path, line_numbers[i], domain)
                 previous_ips[i] = current_ip
                 if os.system("systemctl reload crowdsec") == 0:
                     print(f"Successfully updated IP for {domain} and reloaded crowdsec.")
